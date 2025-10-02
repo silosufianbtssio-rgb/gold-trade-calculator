@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Calculatrice Trade Gold Avancée</title>
+<link rel="icon" type="image/png" href="logo.png">
+<style>
+body { font-family: 'Arial', sans-serif; background: linear-gradient(to right, #f8f9fa, #e9ecef); display: flex; justify-content: center; padding: 30px; }
+.container { background-color: #fff; padding: 30px 40px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.2); width: 950px; }
+h2 { text-align: center; color: #343a40; margin-bottom: 20px; }
+label { display: flex; justify-content: space-between; margin-top: 10px; font-weight: bold; color: #495057; }
+input, select { padding: 6px; border-radius: 6px; border: 1px solid #ced4da; width: 140px; text-align: right; }
+button { margin-top: 20px; padding: 10px; background-color: #007bff; color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+button:hover { background-color: #0056b3; }
+button.reset { background-color: #dc3545; margin-left: 10px; }
+button.reset:hover { background-color: #a71d2a; }
+button.csv { background-color: #28a745; margin-left: 10px; }
+button.csv:hover { background-color: #1e7e34; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+table, th, td { border: 1px solid #ced4da; }
+th, td { padding: 8px; text-align: center; }
+.result-box { margin-top: 20px; padding: 15px; background-color: #f1f3f5; border-radius: 8px; font-weight: bold; }
+.red { color: red; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>Calculatrice Trade Gold Avancée</h2>
+
+<label>Balance initiale ($): <input type="number" id="balance" value="100000"></label>
+<label>Profit Share (%) : <input type="number" id="profitShare" value="90"></label>
+<button onclick="updateProfitShare()">Actualiser Profit Share</button>
+
+<h3>Entrer une trade</h3>
+<label>Date : <input type="date" id="tradeDate" value=""></label>
+<label>Type : 
+<select id="tradeType">
+<option value="buy">Buy</option>
+<option value="sell">Sell</option>
+</select>
+</label>
+<label>Entry : <input type="number" id="entryPrice" step="0.01" value="3868.01"></label>
+<label>SL : <input type="number" id="slPrice" step="0.01" value="3862"></label>
+<label>TP : <input type="number" id="tpPrice" step="0.01" value="3876"></label>
+<label>%Risque : <input type="number" id="riskPercent" step="0.01" value="0.5"></label>
+
+<button onclick="calculateOnly()">Calculer</button>
+<button onclick="addTrade()">Ajouter trade</button>
+<button class="reset" onclick="resetTrades()">Remettre à zéro</button>
+<button class="csv" onclick="exportCSV()">Exporter CSV</button>
+
+<div class="result-box" id="calculatedResult"></div>
+
+<table id="tradesTable">
+<thead>
+<tr>
+<th>#</th>
+<th>Date</th>
+<th>Type</th>
+<th>Entry</th>
+<th>SL</th>
+<th>TP</th>
+<th>Lot</th>
+<th>Profit potentiel</th>
+<th>Perte potentielle</th>
+<th>Profit réel</th>
+<th>Profit Net</th>
+<th>Balance actuelle</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<div class="result-box" id="summary"></div>
+</div>
+
+<script>
+let trades = [];
+let lastCalculated = {};
+let balanceInitial = parseFloat(document.getElementById('balance').value);
+
+window.onload = function() {
+    const saved = localStorage.getItem('trades');
+    if(saved){
+        trades = JSON.parse(saved);
+        updateTable();
+    }
+}
+
+function updateProfitShare() {
+    const profitShare = parseFloat(document.getElementById('profitShare').value)/100;
+    trades.forEach(t => { t.profitNet = t.profitReel * profitShare; });
+    if(lastCalculated.profit) {
+        lastCalculated.profitNet = lastCalculated.profit * profitShare;
+        document.getElementById("calculatedResult").innerHTML = renderResult(lastCalculated);
+    }
+    updateTable();
+}
+
+function calculateOnly() {
+    const balance = balanceInitial;
+    const type = document.getElementById('tradeType').value;
+    const entry = parseFloat(document.getElementById('entryPrice').value);
+    const sl = parseFloat(document.getElementById('slPrice').value);
+    const tp = parseFloat(document.getElementById('tpPrice').value);
+    const riskPercent = parseFloat(document.getElementById('riskPercent').value)/100;
+    const date = document.getElementById('tradeDate').value || new Date().toISOString().split('T')[0];
+    const profitShare = parseFloat(document.getElementById('profitShare').value)/100;
+
+    let slDiff, tpDiff;
+    if(type==="buy") { slDiff = Math.abs(entry - sl); tpDiff = tp - entry; }
+    else { slDiff = Math.abs(sl - entry); tpDiff = entry - tp; }
+
+    let lot = (balance * riskPercent)/(slDiff*100);
+    lot = Math.floor(lot*100)/100;
+    const profit = lot*tpDiff*100;
+    const potentialLoss = lot*slDiff*100;
+    const profitNet = profit * profitShare;
+
+    lastCalculated = {date, type, entry, sl, tp, lot, profit, potentialLoss, profitNet};
+    document.getElementById("calculatedResult").innerHTML = renderResult(lastCalculated);
+}
+
+function renderResult(calc) {
+    const rrRatio = (calc.profit/calc.potentialLoss).toFixed(2);
+    return `
+        <strong>Calcul :</strong><br>
+        Date: ${calc.date}<br>
+        Type: ${calc.type.toUpperCase()}<br>
+        Lot recommandé (MT5): ${calc.lot.toFixed(2)}<br>
+        Profit potentiel: $${calc.profit.toFixed(2)}<br>
+        Perte potentielle: $${calc.potentialLoss.toFixed(2)}<br>
+        Profit Net (après partage): $${calc.profitNet.toFixed(2)}<br>
+        Ratio R/R: ${rrRatio}
+    `;
+}
+
+function addTrade() {
+    if(!lastCalculated.lot) { alert("Veuillez d'abord calculer la trade avant de l'ajouter."); return; }
+    let lastBalance = trades.length ? trades[trades.length-1].balanceActuelle : balanceInitial;
+    let profitReel = lastCalculated.profit;
+    let profitNet = lastCalculated.profitNet;
+    let balanceActuelle = lastBalance + profitReel;
+    lastCalculated.profitReel = profitReel;
+    lastCalculated.balanceActuelle = balanceActuelle;
+    trades.push(lastCalculated);
+    localStorage.setItem('trades', JSON.stringify(trades));
+    updateTable();
+    lastCalculated = {};
+}
+
+function updateTable() {
+    const tbody = document.querySelector("#tradesTable tbody");
+    tbody.innerHTML = "";
+    let totalProfit = 0, totalProfitNet = 0;
+    trades.forEach((t,i)=>{
+        tbody.innerHTML += `<tr>
+            <td>${i+1}</td><td>${t.date}</td><td>${t.type.toUpperCase()}</td>
+            <td>${t.entry}</td><td>${t.sl}</td><td>${t.tp}</td>
+            <td>${t.lot.toFixed(2)}</td>
+            <td>$${t.profit.toFixed(2)}</td><td>$${t.potentialLoss.toFixed(2)}</td>
+            <td>$${t.profitReel.toFixed(2)}</td><td>$${t.profitNet.toFixed(2)}</td>
+            <td>$${t.balanceActuelle.toFixed(2)}</td>
+        </tr>`;
+        totalProfit += t.profit;
+        totalProfitNet += t.profitNet;
+    });
+    document.getElementById("summary").innerHTML = `
+        Total Profit potentiel: $${totalProfit.toFixed(2)}<br>
+        Total Profit Net: $${totalProfitNet.toFixed(2)}
+    `;
+}
+
+function resetTrades() {
+    if(confirm("Voulez-vous vraiment remettre toutes les trades à zéro ?")) {
+        trades = [];
+        localStorage.removeItem('trades');
+        updateTable();
+        document.getElementById("calculatedResult").innerHTML = "";
+        balanceInitial = parseFloat(document.getElementById('balance').value);
+    }
+}
+
+function exportCSV() {
+    if(trades.length===0){ alert("Aucune trade à exporter."); return; }
+    let csv = "Date,Type,Entry,SL,TP,Lot,Profit,Loss,Profit réel,Profit Net,Balance actuelle\n";
+    trades.forEach(t=>{
+        csv += `${t.date},${t.type.toUpperCase()},${t.entry},${t.sl},${t.tp},${t.lot.toFixed(2)},${t.profit.toFixed(2)},${t.potentialLoss.toFixed(2)},${t.profitReel.toFixed(2)},${t.profitNet.toFixed(2)},${t.balanceActuelle.toFixed(2)}\n`;
+    });
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `trades_gold.csv`; a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
